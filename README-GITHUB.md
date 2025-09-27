@@ -6,7 +6,7 @@ A comprehensive solution for monitoring SharePoint Online document downloads wit
 
 Deploy the complete Azure Storage solution with one click:
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fyour-username%2Fsharepoint-download-automation%2Fmain%2Fdeployment%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FOfirGavish%2FSharePoint-Download-Report-Automation%2Fmain%2Fdeployment%2Fazuredeploy.json)
 
 This will create:
 - ✅ Azure Storage Account with static website hosting
@@ -101,8 +101,8 @@ graph TD
 1. **Deploy Infrastructure**
    ```powershell
    # Clone repository
-   git clone https://github.com/your-username/sharepoint-download-automation.git
-   cd sharepoint-download-automation
+   git clone https://github.com/OfirGavish/SharePoint-Download-Report-Automation.git
+   cd SharePoint-Download-Report-Automation
    
    # Deploy to Azure (or use Deploy to Azure button above)
    az deployment group create \
@@ -139,7 +139,7 @@ graph TD
 ## 📁 Repository Structure
 
 ```
-sharepoint-download-automation/
+SharePoint-Download-Report-Automation/
 ├── 📄 README.md                           # This file
 ├── 📄 .github/copilot-instructions.md     # Development guidelines
 ├── 📁 scripts/                            # PowerShell automation
@@ -316,6 +316,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 If this project helps you, please consider giving it a star! ⭐
 
-[![GitHub stars](https://img.shields.io/github/stars/your-username/sharepoint-download-automation.svg?style=social&label=Star)](https://github.com/your-username/sharepoint-download-automation)
+[![GitHub stars](https://img.shields.io/github/stars/OfirGavish/SharePoint-Download-Report-Automation.svg?style=social&label=Star)](https://github.com/OfirGavish/SharePoint-Download-Report-Automation)
 
 **Made with ❤️ for the Microsoft 365 community**

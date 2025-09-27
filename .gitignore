@@ -1,0 +1,27 @@
+# Don't commit the HTML article to GitHub
+docs/sharepointdownloadreport.html
+
+# Common development files
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+.vscode/
+.idea/
+
+# PowerShell execution policy files
+*.ps1xml
+
+# Temporary files
+temp/
+tmp/
+*.bak
+
+# Certificates and sensitive files
+*.pfx
+*.p12
+*.key
+*.pem
+secrets/
+certificates/
