@@ -9,7 +9,7 @@
       "value": "Standard_LRS"
     },
     "enableCdn": {
-      "value": true
+      "value": false
     }
   }
 }

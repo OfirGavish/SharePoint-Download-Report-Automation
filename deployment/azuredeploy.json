@@ -36,9 +36,9 @@
     },
     "enableCdn": {
       "type": "bool",
-      "defaultValue": true,
+      "defaultValue": false,
       "metadata": {
-        "description": "Enable Azure CDN for better performance"
+        "description": "Enable Azure CDN for better performance (adds cost - only enable for public/high-traffic scenarios)"
       }
     }
   },
@@ -51,7 +51,7 @@
   "resources": [
     {
       "type": "Microsoft.Storage/storageAccounts",
-      "apiVersion": "2023-01-01",
+      "apiVersion": "2021-06-01",
       "name": "[parameters('storageAccountName')]",
       "location": "[parameters('location')]",
       "sku": {
@@ -81,28 +81,22 @@
             }
           },
           "keySource": "Microsoft.Storage"
+        },
+        "staticWebsite": {
+          "enabled": true,
+          "indexDocument": "[variables('staticWebsiteIndexDocument')]",
+          "errorDocument404Path": "[variables('staticWebsiteErrorDocument')]"
         }
       }
     },
     {
       "type": "Microsoft.Storage/storageAccounts/blobServices",
-      "apiVersion": "2023-01-01",
+      "apiVersion": "2021-06-01",
       "name": "[concat(parameters('storageAccountName'), '/default')]",
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
       ],
       "properties": {
-        "cors": {
-          "corsRules": [
-            {
-              "allowedOrigins": ["*"],
-              "allowedMethods": ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
-              "maxAgeInSeconds": 3600,
-              "exposedHeaders": ["*"],
-              "allowedHeaders": ["*"]
-            }
-          ]
-        },
         "deleteRetentionPolicy": {
           "enabled": false
         }
@@ -110,7 +104,7 @@
     },
     {
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
-      "apiVersion": "2023-01-01",
+      "apiVersion": "2021-06-01",
       "name": "[concat(parameters('storageAccountName'), '/default/$web')]",
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
@@ -121,7 +115,7 @@
     },
     {
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
-      "apiVersion": "2023-01-01",
+      "apiVersion": "2021-06-01",
       "name": "[concat(parameters('storageAccountName'), '/default/data')]",
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
@@ -133,17 +127,18 @@
     {
       "condition": "[parameters('enableCdn')]",
       "type": "Microsoft.Cdn/profiles",
-      "apiVersion": "2023-05-01",
+      "apiVersion": "2020-04-15",
       "name": "[variables('cdnProfileName')]",
       "location": "Global",
       "sku": {
         "name": "Standard_Microsoft"
-      }
+      },
+      "properties": {}
     },
     {
       "condition": "[parameters('enableCdn')]",
       "type": "Microsoft.Cdn/profiles/endpoints",
-      "apiVersion": "2023-05-01",
+      "apiVersion": "2020-04-15",
       "name": "[concat(variables('cdnProfileName'), '/', variables('cdnEndpointName'))]",
       "location": "Global",
       "dependsOn": [
@@ -163,6 +158,33 @@
             }
           }
         ]
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2020-10-01",
+      "name": "uploadDashboardFiles",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', '$web')]"
+      ],
+      "kind": "AzureCLI",
+      "properties": {
+        "azCliVersion": "2.50.0",
+        "scriptContent": "echo 'Starting dashboard files upload and CORS configuration...' && STORAGE_KEY=$(az storage account keys list --account-name $STORAGE_ACCOUNT_NAME --resource-group $RESOURCE_GROUP_NAME --query '[0].value' -o tsv) && WEBSITE_URL=$(az storage account show --name $STORAGE_ACCOUNT_NAME --resource-group $RESOURCE_GROUP_NAME --query 'primaryEndpoints.web' -o tsv | sed 's/\\///g') && echo \"Website URL: $WEBSITE_URL\" && echo 'Configuring CORS for specific website endpoint...' && az storage cors clear --account-name $STORAGE_ACCOUNT_NAME --account-key $STORAGE_KEY --services b && az storage cors add --account-name $STORAGE_ACCOUNT_NAME --account-key $STORAGE_KEY --services b --methods GET HEAD OPTIONS --origins \"$WEBSITE_URL\" --allowed-headers 'Origin,X-Requested-With,Content-Type,Accept,Authorization,x-ms-*' --exposed-headers 'Content-Length,Content-Type,Date,Server,x-ms-*' --max-age 3600 && echo 'CORS configured successfully' && echo 'Downloading and uploading dashboard files...' && for file in 'index.html:text/html' 'dashboard.css:text/css' 'dashboard.js:application/javascript'; do filename=$(echo $file | cut -d: -f1) && contenttype=$(echo $file | cut -d: -f2) && echo \"Processing $filename\" && curl -s -o \"/tmp/$filename\" \"https://raw.githubusercontent.com/OfirGavish/SharePoint-Download-Report-Automation/main/dashboard/$filename\" && az storage blob upload --account-name $STORAGE_ACCOUNT_NAME --account-key $STORAGE_KEY --container-name '$web' --name \"$filename\" --file \"/tmp/$filename\" --content-type \"$contenttype\" --overwrite true && echo \"Uploaded $filename\"; done && echo 'Dashboard deployment completed successfully!'",
+        "environmentVariables": [
+          {
+            "name": "STORAGE_ACCOUNT_NAME",
+            "value": "[parameters('storageAccountName')]"
+          },
+          {
+            "name": "RESOURCE_GROUP_NAME",
+            "value": "[resourceGroup().name]"
+          }
+        ],
+        "retentionInterval": "P1D",
+        "timeout": "PT10M"
       }
     }
   ],
@@ -186,7 +208,11 @@
     },
     "deploymentInstructions": {
       "type": "string",
-      "value": "Your Azure Storage account has been created successfully! Next steps: 1) Configure your PowerShell scripts with the provided storage account details, 2) Upload the dashboard files to the $web container, 3) Set up your Azure Automation runbook."
+      "value": "Your Azure Storage account has been created successfully! The dashboard files have been automatically uploaded to the $web container. Your static website is ready at the provided URL. Next steps: 1) Configure your PowerShell scripts with the provided storage account details, 2) Set up your Azure Automation runbook for scheduled data collection."
+    },
+    "dashboardUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))).primaryEndpoints.web]"
     }
   }
 }

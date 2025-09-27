@@ -13,6 +13,7 @@ Choose your implementation path:
 - Azure Storage static website hosting
 - JSON data format for better performance
 - Mobile-responsive design
+- **Secure CORS configuration** - Data accessible only from your dashboard URL
 
 ### Option 2: SharePoint Upload + Excel Reports (Traditional)
 - Familiar Excel reports uploaded to SharePoint
@@ -39,10 +40,20 @@ Choose your implementation path:
 
 ## 🛠️ Quick Deployment
 
-1. Click the "Deploy to Azure" button above
-2. Fill in the required parameters
-3. Wait for deployment to complete
-4. Configure your PowerShell scripts with the created resources
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FOfirGavish%2FSharePoint-Download-Report-Automation%2Fmain%2Fdeployment%2Fazuredeploy.json)
+
+**Fully Automated Deployment:**
+1. ✅ Click "Deploy to Azure" button above
+2. ✅ Enter storage account name and select resource group
+3. ✅ Wait for deployment (dashboard files are automatically uploaded!)
+4. ✅ Access your ready-to-use dashboard at the provided URL
+5. ✅ Configure PowerShell scripts with the deployment outputs
+
+**That's it!** No manual file uploads or post-deployment scripts needed.
+
+> 📋 **Complete Setup Guide**: See [POST-DEPLOYMENT-SETUP.md](deployment/POST-DEPLOYMENT-SETUP.md) for detailed instructions.
+
+> 💰 **Cost Optimized**: CDN is disabled by default to minimize costs for internal use. Enable it in the template parameters only if you need global content delivery.
 
 ## 📋 Prerequisites
 
