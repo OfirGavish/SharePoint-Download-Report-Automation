@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SharePoint Download Monitoring Dashboard</title>
+    <link rel="stylesheet" href="dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <h1><i class="fas fa-chart-line"></i> SharePoint Download Monitor</h1>
+                <div class="header-controls">
+                    <button id="refreshBtn" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <button id="exportBtn" class="btn btn-secondary">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                    <button id="themeToggle" class="btn btn-secondary">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay">
+            <div class="loading-spinner">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading SharePoint data...</p>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="dashboard-main">
+            <!-- Summary Cards -->
+            <section class="summary-section">
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <div class="card-icon">
+                            <i class="fas fa-download"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3 id="totalDownloads">0</h3>
+                            <p>Total Downloads</p>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="card-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3 id="uniqueUsers">0</h3>
+                            <p>Unique Users</p>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="card-icon">
+                            <i class="fas fa-sitemap"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3 id="uniqueSites">0</h3>
+                            <p>Sites Accessed</p>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="card-icon">
+                            <i class="fas fa-file"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3 id="uniqueFiles">0</h3>
+                            <p>Unique Files</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Filters -->
+            <section class="filters-section">
+                <div class="filters-container">
+                    <div class="filter-group">
+                        <label for="dateRange">Date Range:</label>
+                        <select id="dateRange">
+                            <option value="all">All Time</option>
+                            <option value="today">Today</option>
+                            <option value="week">This Week</option>
+                            <option value="month">This Month</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="userFilter">User:</label>
+                        <select id="userFilter">
+                            <option value="">All Users</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="siteFilter">Site:</label>
+                        <select id="siteFilter">
+                            <option value="">All Sites</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="fileTypeFilter">File Type:</label>
+                        <select id="fileTypeFilter">
+                            <option value="">All Types</option>
+                        </select>
+                    </div>
+                    <button id="clearFilters" class="btn btn-secondary">Clear Filters</button>
+                </div>
+            </section>
+
+            <!-- Charts Section -->
+            <section class="charts-section">
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <h3>Downloads Over Time</h3>
+                        <canvas id="downloadsChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Top File Types</h3>
+                        <canvas id="fileTypesChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Most Active Users</h3>
+                        <canvas id="usersChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Site Activity</h3>
+                        <canvas id="sitesChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Data Table -->
+            <section class="table-section">
+                <div class="table-header">
+                    <h3>Recent Downloads</h3>
+                    <div class="table-controls">
+                        <input type="text" id="searchInput" placeholder="Search downloads...">
+                        <select id="pageSize">
+                            <option value="25">25 per page</option>
+                            <option value="50">50 per page</option>
+                            <option value="100">100 per page</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="downloadsTable">
+                        <thead>
+                            <tr>
+                                <th data-sort="timestamp">Date/Time <i class="fas fa-sort"></i></th>
+                                <th data-sort="user">User <i class="fas fa-sort"></i></th>
+                                <th data-sort="fileName">File <i class="fas fa-sort"></i></th>
+                                <th data-sort="fileExtension">Type <i class="fas fa-sort"></i></th>
+                                <th data-sort="siteName">Site <i class="fas fa-sort"></i></th>
+                                <th data-sort="clientIP">IP Address <i class="fas fa-sort"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="downloadsTableBody">
+                            <!-- Data will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination">
+                    <button id="prevPage" class="btn btn-secondary">Previous</button>
+                    <span id="pageInfo">Page 1 of 1</span>
+                    <button id="nextPage" class="btn btn-secondary">Next</button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="dashboard-footer">
+            <p>Last updated: <span id="lastUpdated">Never</span> | 
+               Data source: <span id="dataSource">Azure Storage</span> |
+               <a href="https://github.com/OfirGavish/sharepoint-download-monitoring" target="_blank">
+                   <i class="fab fa-github"></i> View on GitHub
+               </a>
+            </p>
+        </footer>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Dashboard Configuration</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="config-group">
+                    <label for="storageAccountName">Storage Account Name:</label>
+                    <input type="text" id="storageAccountName" placeholder="Enter your storage account name">
+                </div>
+                <div class="config-group">
+                    <label for="containerName">Container Name:</label>
+                    <input type="text" id="containerName" value="data" placeholder="data">
+                </div>
+                <div class="config-group">
+                    <label for="fileName">Data File Name:</label>
+                    <input type="text" id="fileName" value="sharepoint-downloads-latest.json" placeholder="sharepoint-downloads-latest.json">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="saveConfig" class="btn btn-primary">Save Configuration</button>
+                <button id="cancelConfig" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>
