@@ -1,132 +1,199 @@
-#Requires -Version 7.2
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    SharePoint Download Monitoring Script - SharePoint Upload Option
+    SharePoint Download Monitoring Script - SharePoint Upload Option (Azure Automation Compatible)
     
 .DESCRIPTION
     Monitors SharePoint download activity and uploads Excel reports to SharePoint document libraries.
-    This script requires specific module versions for reliable authentication and upload functionality.
+    This script is optimized for Azure Automation Runbooks and supports both manual execution and automation.
+    Based on proven working script for reliable SharePoint upload functionality.
     
 .PARAMETER TenantId
-    Azure AD Tenant ID
+    Azure AD Tenant ID (optional if using Azure Automation Variables)
     
-.PARAMETER ClientId
-    Application (Client) ID from App Registration
+.PARAMETER TenantName
+    Tenant name for Exchange Online connection (optional if using Azure Automation Variables)
+    
+.PARAMETER AppId  
+    Application (Client) ID from App Registration (optional if using Azure Automation Variables)
     
 .PARAMETER CertificateThumbprint
-    Certificate thumbprint for authentication
+    Certificate thumbprint for authentication (optional if using Azure Automation Variables)
     
-.PARAMETER ReportSiteId
-    SharePoint site ID where reports will be uploaded
+.PARAMETER CertificateName
+    Certificate name in Azure Automation (optional if using Azure Automation Variables)
     
-.PARAMETER ReportLibraryName
-    Document library name for report uploads (default: 'Download Reports')
+.PARAMETER SiteId
+    SharePoint site ID where reports will be uploaded (optional if using Azure Automation Variables)
+    
+.PARAMETER DriveId
+    SharePoint drive ID for the target document library (optional if using Azure Automation Variables)
+    
+.PARAMETER FolderPath
+    Folder path within the document library for reports (default: 'Reports')
     
 .PARAMETER DaysBack
-    Number of days to look back for audit logs (default: 7)
+    Number of days to look back for audit logs (default: 14)
+    
+.PARAMETER TargetSiteIds
+    Comma-separated list of specific site IDs to monitor (optional - monitors all sites if not specified)
     
 .EXAMPLE
-    .\Monitor-SharePointDownloads-SharePointUpload.ps1 -TenantId "your-tenant-id" -ClientId "your-client-id" -CertificateThumbprint "your-cert-thumbprint" -ReportSiteId "your-site-id"
+    # Azure Automation Runbook execution (uses Automation Variables)
+    .\Monitor-SharePointDownloads-SharePointUpload.ps1
+    
+.EXAMPLE
+    # Manual execution with parameters
+    .\Monitor-SharePointDownloads-SharePointUpload.ps1 -TenantId "your-tenant-id" -AppId "your-app-id" -CertificateThumbprint "your-cert-thumbprint" -SiteId "your-site-id" -DriveId "your-drive-id"
     
 .NOTES
-    Author: Ofir Gavish & Eitan Talmi
-    Version: 2.0
+    Author: Ofir Gavish, Eitan Talmi, and Community Contributors
+    Version: 2.1 - Azure Automation Optimized
     
-    CRITICAL MODULE REQUIREMENTS:
+    VERIFIED MODULE REQUIREMENTS (tested and working):
     - ExchangeOnlineManagement 3.5.0
-    - Microsoft.Graph.Authentication 2.25.0
-    - Az.Storage 6.0.0
+    - Microsoft.Graph.Authentication 2.25.0  
     - ImportExcel (latest)
     
-    These specific versions are required for reliable SharePoint upload functionality.
-    DO NOT use newer versions without testing as they may break authentication.
+    These specific versions are CRITICAL for reliable authentication in Azure Automation.
+    
+    AZURE AUTOMATION VARIABLES REQUIRED:
+    - AppId: Application ID from App Registration
+    - TenantName: Your M365 tenant name (e.g., 'contoso')
+    - TenantID: Azure AD Tenant ID
+    - CertThumbprint: Certificate thumbprint OR CertificateName
+    - CertificateName: Name of certificate in Automation Account
+    - SiteID: Target SharePoint site ID for reports
+    - DriveID: Target drive ID within the site
 #>
 
 param(
     [Parameter(Mandatory = $false)]
-    [string]$TenantId = (Get-AutomationVariable -Name "TenantID" -ErrorAction SilentlyContinue),
+    [string]$TenantId,
     
     [Parameter(Mandatory = $false)]
-    [string]$ClientId = (Get-AutomationVariable -Name "AppID" -ErrorAction SilentlyContinue),
+    [string]$TenantName,
+    
+    [Parameter(Mandatory = $false)]
+    [string]$AppId,
     
     [Parameter(Mandatory = $false)]
     [string]$CertificateThumbprint,
     
     [Parameter(Mandatory = $false)]
-    [string]$CertificateName = (Get-AutomationVariable -Name "CertificateName" -ErrorAction SilentlyContinue),
+    [string]$CertificateName,
     
     [Parameter(Mandatory = $false)]
-    [string]$ReportSiteId = (Get-AutomationVariable -Name "ReportSiteId" -ErrorAction SilentlyContinue),
+    [string]$SiteId,
     
     [Parameter(Mandatory = $false)]
-    [string]$ReportLibraryName = "Download Reports",
+    [string]$DriveId,
     
     [Parameter(Mandatory = $false)]
-    [int]$DaysBack = 7
+    [string]$FolderPath = "Reports",
+    
+    [Parameter(Mandatory = $false)]
+    [int]$DaysBack = 14,
+    
+    [Parameter(Mandatory = $false)]
+    [string[]]$TargetSiteIds
 )
 
-# Import required modules with version check
+# Get variables from Azure Automation if running in automation context
 try {
-    Write-Output "📦 Checking module versions..."
+    if (-not $AppId) { $AppId = Get-AutomationVariable -Name 'AppId' -ErrorAction SilentlyContinue }
+    if (-not $TenantName) { $TenantName = Get-AutomationVariable -Name 'TenantName' -ErrorAction SilentlyContinue }
+    if (-not $TenantId) { $TenantId = Get-AutomationVariable -Name 'TenantID' -ErrorAction SilentlyContinue }
+    if (-not $CertificateThumbprint) { $CertificateThumbprint = Get-AutomationVariable -Name 'CertThumbprint' -ErrorAction SilentlyContinue }
+    if (-not $CertificateName) { $CertificateName = Get-AutomationVariable -Name 'CertificateName' -ErrorAction SilentlyContinue }
+    if (-not $SiteId) { $SiteId = Get-AutomationVariable -Name 'SiteID' -ErrorAction SilentlyContinue }
+    if (-not $DriveId) { $DriveId = Get-AutomationVariable -Name 'DriveID' -ErrorAction SilentlyContinue }
     
-    # Import ExchangeOnlineManagement 3.5.0
-    $EXOModule = Get-Module -Name ExchangeOnlineManagement -ListAvailable | Where-Object { $_.Version -eq "3.5.0" }
-    if (-not $EXOModule) {
-        throw "ExchangeOnlineManagement version 3.5.0 is required. Current version may cause authentication issues."
-    }
-    Import-Module ExchangeOnlineManagement -RequiredVersion 3.5.0 -Force -ErrorAction Stop
-    
-    # Import Microsoft.Graph.Authentication 2.25.0
-    $GraphModule = Get-Module -Name Microsoft.Graph.Authentication -ListAvailable | Where-Object { $_.Version -eq "2.25.0" }
-    if (-not $GraphModule) {
-        throw "Microsoft.Graph.Authentication version 2.25.0 is required. Current version may cause authentication issues."
-    }
-    Import-Module Microsoft.Graph.Authentication -RequiredVersion 2.25.0 -Force -ErrorAction Stop
-    
-    # Import ImportExcel for Excel generation
-    Import-Module ImportExcel -Force -ErrorAction Stop
-    
-    Write-Output "✅ Successfully imported required modules with correct versions"
+    Write-Output "✅ Retrieved configuration from Azure Automation Variables"
 }
 catch {
-    Write-Error "❌ Failed to import required modules: $($_.Exception.Message)"
-    Write-Error "Please ensure you have the specific module versions installed as documented"
+    Write-Output "ℹ️ Not running in Azure Automation context or variables not configured"
+}
+
+# Import required modules with version verification
+try {
+    Write-Output "📦 Importing required modules with verified versions..."
+    
+    # Import ExchangeOnlineManagement 3.5.0 (CRITICAL - tested working version)
+    Import-Module ExchangeOnlineManagement -RequiredVersion 3.5.0 -Force -ErrorAction Stop
+    Write-Output "✅ ExchangeOnlineManagement 3.5.0 imported successfully"
+    
+    # Import Microsoft.Graph.Authentication 2.25.0 (CRITICAL - tested working version)  
+    Import-Module Microsoft.Graph.Authentication -RequiredVersion 2.25.0 -Force -ErrorAction Stop
+    Write-Output "✅ Microsoft.Graph.Authentication 2.25.0 imported successfully"
+    
+    # Import ImportExcel for Excel report generation
+    Import-Module ImportExcel -Force -ErrorAction Stop
+    Write-Output "✅ ImportExcel module imported successfully"
+    
+    Write-Output "🔧 All required modules loaded with verified working versions"
+}
+catch {
+    Write-Error "❌ CRITICAL ERROR - Failed to import required modules: $($_.Exception.Message)"
+    Write-Error "💡 SOLUTION: Install exact versions with:"
+    Write-Error "   Install-Module ExchangeOnlineManagement -RequiredVersion 3.5.0 -Force"
+    Write-Error "   Install-Module Microsoft.Graph.Authentication -RequiredVersion 2.25.0 -Force"
+    Write-Error "   Install-Module ImportExcel -Force"
     exit 1
 }
 
-# Get certificate for authentication
+# Validate required parameters
+if (-not $AppId) { Write-Error "❌ AppId is required (parameter or Automation Variable)"; exit 1 }
+if (-not $TenantName -and -not $TenantId) { Write-Error "❌ TenantName or TenantId is required"; exit 1 }
+if (-not $SiteId) { Write-Error "❌ SiteId is required for report upload"; exit 1 }
+if (-not $DriveId) { Write-Error "❌ DriveId is required for report upload"; exit 1 }
+
+# Get certificate for authentication (Azure Automation compatible)
 try {
     if ($CertificateName) {
-        $Certificate = Get-AutomationCertificate -Name $CertificateName
+        $Certificate = Get-AutomationCertificate -Name $CertificateName -ErrorAction Stop
         $CertificateThumbprint = $Certificate.Thumbprint
         Write-Output "✅ Retrieved certificate from Automation Account: $CertificateName"
     }
     elseif (-not $CertificateThumbprint) {
-        throw "Certificate thumbprint or certificate name must be provided"
+        Write-Error "❌ Either CertificateThumbprint or CertificateName must be provided"
+        exit 1
     }
+    
+    Write-Output "🔐 Using certificate authentication with thumbprint: $($CertificateThumbprint.Substring(0,8))..."
 }
 catch {
     Write-Error "❌ Failed to retrieve certificate: $($_.Exception.Message)"
     exit 1
 }
 
-# Connect to Exchange Online
+# Connect to Exchange Online (using proven working method)
 try {
-    Connect-ExchangeOnline -CertificateThumbprint $CertificateThumbprint -AppId $ClientId -Organization "$TenantId" -ShowBanner:$false
-    Write-Output "✅ Connected to Exchange Online"
+    Write-Output "🔗 Connecting to Exchange Online..."
+    Connect-ExchangeOnline -AppId $AppId -Organization $TenantName -CertificateThumbprint $CertificateThumbprint -ShowBanner:$false
+    Write-Output "✅ Successfully connected to Exchange Online"
 }
 catch {
     Write-Error "❌ Failed to connect to Exchange Online: $($_.Exception.Message)"
+    Write-Error "💡 Verify TenantName, AppId, and certificate configuration"
     exit 1
 }
 
-# Connect to Microsoft Graph
+# Connect to Microsoft Graph (using certificate method)
 try {
-    Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint -NoWelcome
-    Write-Output "✅ Connected to Microsoft Graph"
+    Write-Output "🔗 Connecting to Microsoft Graph..."
+    if ($CertificateName) {
+        # Use certificate object for Automation Account
+        Connect-MgGraph -TenantId $TenantId -ClientId $AppId -Certificate $Certificate
+    } else {
+        # Use thumbprint for manual execution
+        Connect-MgGraph -TenantId $TenantId -ClientId $AppId -CertificateThumbprint $CertificateThumbprint
+    }
+    Write-Output "✅ Successfully connected to Microsoft Graph"
 }
 catch {
     Write-Error "❌ Failed to connect to Microsoft Graph: $($_.Exception.Message)"
+    Write-Error "💡 Verify TenantId, AppId, and certificate permissions"
     exit 1
 }
 
@@ -136,37 +203,59 @@ $StartDate = $EndDate.AddDays(-$DaysBack)
 
 Write-Output "📅 Searching audit logs from $($StartDate.ToString('yyyy-MM-dd')) to $($EndDate.ToString('yyyy-MM-dd'))"
 
-# Search for SharePoint download events
+# Search for SharePoint download events (using proven working approach)
 try {
-    $AuditResults = Search-UnifiedAuditLog -StartDate $StartDate -EndDate $EndDate -Operations "FileDownloaded" -ResultSize 5000
+    Write-Output "🔍 Searching for SharePoint download events..."
+    
+    # Build search parameters (similar to working script)
+    $SearchParams = @{
+        StartDate = $StartDate
+        EndDate = $EndDate
+        RecordType = 'SharePointFileOperation'
+        Operations = 'FileDownloaded'
+        ResultSize = 5000
+    }
+    
+    # Add site filtering if specified
+    if ($TargetSiteIds) {
+        $SearchParams.SiteIds = $TargetSiteIds
+        Write-Output "🎯 Filtering to specific sites: $($TargetSiteIds -join ', ')"
+    }
+    
+    # Execute search
+    $AuditResults = Search-UnifiedAuditLog @SearchParams
     Write-Output "📊 Found $($AuditResults.Count) download events"
     
     if ($AuditResults.Count -eq 0) {
         Write-Output "ℹ️ No download events found in the specified date range"
-        $ProcessedData = @()
+        $CleanedData = @()
     }
     else {
-        # Process audit data for Excel export
-        $ProcessedData = foreach ($Result in $AuditResults) {
-            $AuditData = $Result.AuditData | ConvertFrom-Json
-            
-            [PSCustomObject]@{
-                'Date/Time' = $Result.CreationDate.ToString('yyyy-MM-dd HH:mm:ss')
-                'User' = $AuditData.UserId
-                'User Type' = $AuditData.UserType
-                'File Name' = $AuditData.ObjectId -replace '.*/', ''
-                'File Extension' = ($AuditData.ObjectId -replace '.*/', '') -replace '.*\.', ''
-                'File Path' = $AuditData.ObjectId
-                'Site URL' = $AuditData.SiteUrl
-                'Site Name' = ($AuditData.SiteUrl -replace 'https://.*sharepoint.com/sites/', '') -replace '/', ''
-                'Client IP' = $AuditData.ClientIP
-                'User Agent' = $AuditData.UserAgent
-                'Operation' = $AuditData.Operation
-                'Workload' = $AuditData.Workload
+        # Process audit data (using working script approach)
+        Write-Output "⚙️ Processing audit data for Excel export..."
+        $CleanedData = foreach ($Row in $AuditResults) {
+            try {
+                $AuditData = $Row.AuditData | ConvertFrom-Json
+                $FilePath = $AuditData.ObjectId
+                
+                [PSCustomObject]@{
+                    "Date" = $Row.CreationDate
+                    "Downloaded File Path" = $FilePath
+                    "User" = $AuditData.UserId
+                    "Site URL" = $AuditData.SiteUrl
+                    "Client IP" = $AuditData.ClientIP
+                    "File Name" = ($FilePath -split '/')[-1]
+                    "Site Name" = if ($AuditData.SiteUrl) { ($AuditData.SiteUrl -split '/sites/')[-1] -split '/' | Select-Object -First 1 } else { 'Unknown' }
+                }
+            } catch {
+                Write-Warning "⚠️ Failed to process audit record: $($_.Exception.Message)"
+                $null
             }
         }
         
-        Write-Output "✅ Processed $($ProcessedData.Count) download events for Excel export"
+        # Remove null entries from processing errors
+        $CleanedData = $CleanedData | Where-Object { $_ -ne $null }
+        Write-Output "✅ Successfully processed $($CleanedData.Count) download events"
     }
 }
 catch {
@@ -174,104 +263,76 @@ catch {
     exit 1
 }
 
-# Generate Excel report
+# Generate Excel report (using proven working method)
 try {
-    $ReportDate = Get-Date -Format 'yyyy-MM-dd-HHmm'
-    $ExcelFileName = "SharePoint_Downloads_$ReportDate.xlsx"
-    $TempFile = Join-Path $env:TEMP $ExcelFileName
+    $DateString = (Get-Date -Format "yyyy-MM-dd")
+    $FileName = "Logs_$DateString.xlsx"
+    $ExcelPath = Join-Path $env:TEMP $FileName
     
-    # Create Excel workbook with multiple worksheets
-    $ProcessedData | Export-Excel -Path $TempFile -WorksheetName "Download Details" -AutoSize -FreezeTopRow -BoldTopRow
+    Write-Output "📊 Generating Excel report: $FileName"
     
-    # Add summary worksheet
-    $Summary = [PSCustomObject]@{
-        'Report Generated' = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-        'Date Range Start' = $StartDate.ToString('yyyy-MM-dd')
-        'Date Range End' = $EndDate.ToString('yyyy-MM-dd')
-        'Total Downloads' = $ProcessedData.Count
-        'Unique Users' = ($ProcessedData | Select-Object -Unique User).Count
-        'Unique Sites' = ($ProcessedData | Select-Object -Unique 'Site URL').Count
-        'Unique Files' = ($ProcessedData | Select-Object -Unique 'File Path').Count
-    }
+    # Export main data to Excel with table formatting (matches working script)
+    $CleanedData | Export-Excel -Path $ExcelPath -WorksheetName "AuditLog" -AutoSize -TableName "LogTable"
     
-    $Summary | Export-Excel -Path $TempFile -WorksheetName "Summary" -AutoSize -BoldTopRow -Append
-    
-    # Add top users analysis
-    $TopUsers = $ProcessedData | Group-Object User | Sort-Object Count -Descending | Select-Object -First 20 | ForEach-Object {
-        [PSCustomObject]@{
-            'User' = $_.Name
-            'Download Count' = $_.Count
-        }
-    }
-    
-    if ($TopUsers) {
-        $TopUsers | Export-Excel -Path $TempFile -WorksheetName "Top Users" -AutoSize -BoldTopRow -Append
-    }
-    
-    # Add file type analysis
-    $FileTypes = $ProcessedData | Group-Object 'File Extension' | Sort-Object Count -Descending | ForEach-Object {
-        [PSCustomObject]@{
-            'File Type' = $_.Name
-            'Download Count' = $_.Count
-        }
-    }
-    
-    if ($FileTypes) {
-        $FileTypes | Export-Excel -Path $TempFile -WorksheetName "File Types" -AutoSize -BoldTopRow -Append
-    }
-    
-    Write-Output "✅ Generated Excel report: $ExcelFileName"
+    Write-Output "✅ Successfully generated Excel report with $($CleanedData.Count) records"
+    Write-Output "📁 Temporary file created: $ExcelPath"
 }
 catch {
     Write-Error "❌ Failed to generate Excel report: $($_.Exception.Message)"
     exit 1
 }
 
-# Upload to SharePoint
+# Upload to SharePoint using Microsoft Graph (proven working method)
 try {
-    Write-Output "📤 Uploading report to SharePoint..."
+    Write-Output "📤 Uploading Excel report to SharePoint..."
     
-    # Read file content
-    $FileContent = [System.IO.File]::ReadAllBytes($TempFile)
-    $Base64Content = [System.Convert]::ToBase64String($FileContent)
+    # Read file as bytes
+    $FileBytes = [System.IO.File]::ReadAllBytes($ExcelPath)
     
-    # Get access token for Graph API
-    $Context = Get-MgContext
-    $Token = [Microsoft.Graph.PowerShell.Authentication.GraphSession]::Instance.AuthenticationProvider.GetAccessTokenAsync("https://graph.microsoft.com/").GetAwaiter().GetResult()
+    # Construct upload URL (matches working script format)
+    $UploadUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/drives/$DriveId/root:/$FolderPath/${FileName}:/content"
     
-    # Upload file using Graph API
-    $UploadUrl = "https://graph.microsoft.com/v1.0/sites/$ReportSiteId/drive/root:/$ReportLibraryName/$ExcelFileName:/content"
+    Write-Output "🎯 Upload target: $UploadUrl"
     
-    $Headers = @{
-        'Authorization' = "Bearer $Token"
-        'Content-Type' = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }
+    # Upload using Invoke-MgGraphRequest (preferred method for Graph PowerShell SDK)
+    $Response = Invoke-MgGraphRequest -Method PUT -Uri $UploadUrl -Body $FileBytes -ContentType "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     
-    $Response = Invoke-RestMethod -Uri $UploadUrl -Method PUT -Body $FileContent -Headers $Headers
+    Write-Output "✅ File '$FileName' uploaded successfully to SharePoint"
+    Write-Output "� SharePoint URL: $($Response.webUrl)"
     
-    Write-Output "✅ Successfully uploaded report to SharePoint"
-    Write-Output "📁 File location: $($Response.webUrl)"
-    
-    # Clean up temp file
-    Remove-Item $TempFile -Force
+    # Clean up temporary file
+    Remove-Item $ExcelPath -Force -ErrorAction SilentlyContinue
+    Write-Output "🧹 Cleaned up temporary files"
 }
 catch {
-    Write-Error "❌ Failed to upload to SharePoint: $($_.Exception.Message)"
-    Write-Error "This may be due to insufficient permissions or incorrect module versions"
+    Write-Error "❌ Upload failed: $($_.Exception.Message)"
+    Write-Error "💡 Common causes:"
+    Write-Error "   - Incorrect SiteId or DriveId"
+    Write-Error "   - Insufficient permissions on target library"
+    Write-Error "   - Network connectivity issues"
+    Write-Error "   - Authentication token expired"
     exit 1
 }
 finally {
-    # Disconnect from services
+    # Disconnect from services (cleanup)
     try {
         Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
         Disconnect-MgGraph -ErrorAction SilentlyContinue
-        Write-Output "✅ Disconnected from services"
+        Write-Output "✅ Successfully disconnected from services"
     }
     catch {
-        Write-Warning "⚠️ Error disconnecting from services: $($_.Exception.Message)"
+        Write-Warning "⚠️ Warning during service disconnection: $($_.Exception.Message)"
     }
 }
 
-Write-Output "🎉 Script completed successfully!"
-Write-Output "📊 Summary: $($ProcessedData.Count) downloads processed and uploaded to SharePoint"
-Write-Output "📈 Excel report contains detailed analysis across multiple worksheets"
+# Final summary
+Write-Output ""
+Write-Output "🎉 SharePoint Download Monitoring completed successfully!"
+Write-Output "📊 Summary Statistics:"
+Write-Output "   • Downloads processed: $($CleanedData.Count)"
+Write-Output "   • Date range: $($StartDate.ToString('yyyy-MM-dd')) to $($EndDate.ToString('yyyy-MM-dd'))"
+Write-Output "   • Report uploaded: $FileName"
+Write-Output "   • Target location: $FolderPath folder in SharePoint"
+Write-Output ""
+Write-Output "� Script version: 2.1 (Azure Automation Optimized)"
+Write-Output "✅ All operations completed successfully"
